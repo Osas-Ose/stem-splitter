@@ -50,6 +50,7 @@ export const tracks = mysqlTable("tracks", {
   status: mysqlEnum("status", ["uploaded", "processing", "completed", "failed"]).default("uploaded"),
   isFavorite: boolean("isFavorite").default(false),
   fileUrl: varchar("fileUrl", { length: 1024 }), // S3 URL
+  separationJobId: varchar("separationJobId", { length: 255 }), // Replicate prediction ID
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
