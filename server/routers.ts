@@ -9,6 +9,8 @@ const uploadAudioSchema = z.object({
   fileSize: z.number().positive(),
   mimeType: z.string(),
   fileUrl: z.string().optional(),
+  title: z.string().optional(),
+  artist: z.string().optional(),
 });
 
 const stemSeparationSchema = z.object({
@@ -48,7 +50,7 @@ export const appRouter = router({
       }),
 
     // Create a new track (after upload)
-    create: protectedProcedure
+      create: protectedProcedure
       .input(uploadAudioSchema)
       .mutation(({ ctx, input }) => {
         return db.createTrack({
@@ -57,6 +59,8 @@ export const appRouter = router({
           fileSize: input.fileSize,
           mimeType: input.mimeType,
           fileUrl: input.fileUrl,
+          title: input.title,
+          artist: input.artist,
           status: "uploaded",
         });
       }),

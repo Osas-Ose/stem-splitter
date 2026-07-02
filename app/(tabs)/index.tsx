@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   FlatList,
   Alert,
-  Platform,
 } from "react-native";
 import { useState } from "react";
 import { ScreenContainer } from "@/components/screen-container";
@@ -50,6 +49,21 @@ const STATUS_COLORS: Record<string, string> = {
   failed: "#EF4444",
 };
 
+const parseFileName = (fileName: string) => {
+  const withoutExt = fileName.replace(/\.[^/.]+$/, "").trim();
+  const separators = [" - ", " – ", " — ", "_-_"];
+  for (const sep of separators) {
+    const idx = withoutExt.indexOf(sep);
+    if (idx > 0) {
+      const left = withoutExt.slice(0, idx).trim();
+      const right = withoutExt.slice(idx + sep.length).trim();
+      const artist = left.replace(/^\d+[\s._-]+/, "");
+      return { artist: artist || null, title: right || withoutExt };
+    }
+  }
+  return { artist: null, title: withoutExt };
+};
+
 export default function HomeScreen() {
   const colors = useColors();
   const [uploading, setUploading] = useState(false);
@@ -66,7 +80,7 @@ export default function HomeScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      // ── 1. Pick a file ──────────────────────────────────────────────────
+      // ── 1. Pick a file ──────────────────────────────────────────────
       const result = await DocumentPicker.getDocumentAsync({
         type: SUPPORTED_MIME,
         copyToCacheDirectory: true,
@@ -78,6 +92,7 @@ export default function HomeScreen() {
       const mimeType = asset.mimeType ?? "audio/mpeg";
       const fileName = asset.name;
       const fileSize = asset.size ?? 0;
+      const { artist, title } = parseFileName(fileName);
 
       if (!SUPPORTED_MIME.includes(mimeType)) {
         Alert.alert(
@@ -90,16 +105,14 @@ export default function HomeScreen() {
       setUploading(true);
       setUploadProgress("Getting upload URL…");
 
-      // ── 2. Get a presigned PUT URL from the server ───────────────────────
+      // ── 2. Get a presigned PUT URL from the server ───────────────────
       const { uploadUrl, key } = await getUploadUrlMutation.mutateAsync({
         fileName,
         mimeType,
       });
 
-      // ── 3. Upload the file directly to storage ───────────────────────────
+      // ── 3. Upload the file directly to storage ───────────────────────
       setUploadProgress("Uploading file…");
-
-      // Build a Blob from the local URI so we can PUT it
       const fileResponse = await fetch(asset.uri);
       const fileBlob = await fileResponse.blob();
 
@@ -113,7 +126,7 @@ export default function HomeScreen() {
         throw new Error(`Upload failed (${uploadResp.status})`);
       }
 
-      // ── 4. Create the track record in the DB ─────────────────────────────
+      // ── 4. Create the track record in the DB ─────────────────────────
       setUploadProgress("Saving track…");
       const fileUrl = `/manus-storage/${key}`;
 
@@ -122,15 +135,17 @@ export default function HomeScreen() {
         fileSize,
         mimeType,
         fileUrl,
+        title,
+        artist: artist ?? undefined,
       });
 
-      // ── 5. Kick off stem separation ──────────────────────────────────────
+      // ── 5. Kick off stem separation ──────────────────────────────────
       setUploadProgress("Starting separation…");
       await startSeparationMutation.mutateAsync({ trackId: trackId || 0 });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // ── 6. Navigate to the processing screen ─────────────────────────────
+      // ── 6. Navigate to the processing screen ─────────────────────────
       router.push({
         pathname: "/processing",
         params: { trackId: (trackId || 0).toString() },
@@ -159,54 +174,60 @@ export default function HomeScreen() {
   const renderTrackCard = ({ item }: { item: Track }) => {
     const statusColor = STATUS_COLORS[item.status ?? ""] ?? colors.border;
     return (
-      <TouchableOpacity
-        onPress={() => handleTrackTap(item.id)}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity onPress={() => handleTrackTap(item.id)} activeOpacity={0.7}>
         <View
-          className="bg-surface rounded-lg p-4 mb-3 border border-border"
-          style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          }}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text
-                className="text-base font-semibold text-foreground mb-1"
-                style={{ color: colors.foreground }}
-                numberOfLines={1}
-              >
-                {item.title || item.fileName}
-              </Text>
-              <Text
-                className="text-sm text-muted mb-2"
-                style={{ color: colors.muted }}
-                numberOfLines={1}
-              >
-                {item.artist || "Unknown"}
-              </Text>
-              <View className="flex-row items-center gap-2">
-                <Text className="text-xs" style={{ color: colors.muted }}>
-                  {formatDuration(item.duration)}
-                </Text>
-                {item.status && (
-                  <View
-                    className="px-2 py-1 rounded"
-                    style={{ backgroundColor: statusColor + "33" }}
-                  >
-                    <Text
-                      className="text-xs font-medium capitalize"
-                      style={{ color: statusColor }}
-                    >
-                      {item.status}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-            <View
-              className="w-12 h-12 rounded-lg items-center justify-center"
-              style={{ backgroundColor: colors.primary + "20" }}
+          <View
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 10,
+              backgroundColor: colors.primary + "20",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ fontSize: 22 }}>🎵</Text>
+          </View>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text
+              style={{ fontSize: 15, fontWeight: "600", color: colors.foreground }}
+              numberOfLines={1}
             >
-              <Text className="text-xl">🎵</Text>
+              {item.title || item.fileName}
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.muted }} numberOfLines={1}>
+              {item.artist || "Unknown Artist"}
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={{ fontSize: 11, color: colors.muted }}>
+                {formatDuration(item.duration)}
+              </Text>
+              {item.status && (
+                <View
+                  style={{
+                    paddingHorizontal: 7,
+                    paddingVertical: 2,
+                    borderRadius: 6,
+                    backgroundColor: statusColor + "25",
+                  }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: "600", color: statusColor }}>
+                    {item.status}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -216,20 +237,14 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="p-4">
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="gap-6">
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 24 }}>
           {/* Header */}
-          <View className="gap-2">
-            <Text
-              className="text-3xl font-bold text-foreground"
-              style={{ color: colors.foreground }}
-            >
+          <View style={{ gap: 4 }}>
+            <Text style={{ fontSize: 30, fontWeight: "700", color: colors.foreground }}>
               StemSplitter
             </Text>
-            <Text className="text-base" style={{ color: colors.muted }}>
+            <Text style={{ fontSize: 15, color: colors.muted }}>
               Extract stems from any track
             </Text>
           </View>
@@ -242,23 +257,29 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <View
-              className="rounded-2xl p-8 items-center justify-center gap-3"
-              style={{ backgroundColor: colors.primary }}
+              style={{
+                borderRadius: 16,
+                padding: 32,
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                backgroundColor: colors.primary,
+              }}
             >
               {uploading ? (
                 <>
                   <ActivityIndicator size="large" color="#fff" />
-                  <Text className="text-base font-semibold text-white text-center">
+                  <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff" }}>
                     {uploadProgress ?? "Uploading…"}
                   </Text>
                 </>
               ) : (
                 <>
-                  <Text className="text-4xl">📤</Text>
-                  <Text className="text-lg font-semibold text-white text-center">
+                  <Text style={{ fontSize: 40 }}>📤</Text>
+                  <Text style={{ fontSize: 18, fontWeight: "600", color: "#fff" }}>
                     Upload Audio
                   </Text>
-                  <Text className="text-sm text-white text-center opacity-80">
+                  <Text style={{ fontSize: 13, color: "#ffffff99" }}>
                     MP3 · WAV · FLAC · M4A
                   </Text>
                 </>
@@ -267,11 +288,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           {/* Recent tracks */}
-          <View className="gap-3">
-            <Text
-              className="text-lg font-semibold"
-              style={{ color: colors.foreground }}
-            >
+          <View style={{ gap: 12 }}>
+            <Text style={{ fontSize: 18, fontWeight: "600", color: colors.foreground }}>
               Recent Tracks
             </Text>
 
@@ -286,23 +304,21 @@ export default function HomeScreen() {
               />
             ) : (
               <View
-                className="rounded-lg p-8 items-center justify-center gap-3 border"
                 style={{
+                  borderRadius: 12,
+                  padding: 40,
+                  alignItems: "center",
+                  gap: 10,
+                  borderWidth: 1,
                   borderColor: colors.border,
                   backgroundColor: colors.surface,
                 }}
               >
-                <Text className="text-4xl">🎼</Text>
-                <Text
-                  className="text-base font-medium text-center"
-                  style={{ color: colors.foreground }}
-                >
+                <Text style={{ fontSize: 40 }}>🎼</Text>
+                <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground }}>
                   No tracks yet
                 </Text>
-                <Text
-                  className="text-sm text-center"
-                  style={{ color: colors.muted }}
-                >
+                <Text style={{ fontSize: 13, color: colors.muted, textAlign: "center" }}>
                   Upload your first track to get started
                 </Text>
               </View>

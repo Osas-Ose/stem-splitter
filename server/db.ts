@@ -90,6 +90,8 @@ export async function createTrack(data: {
   fileSize: number;
   mimeType: string;
   fileUrl?: string;
+  title?: string;
+  artist?: string;
   status: string;
 }) {
   const db = await getDb();
