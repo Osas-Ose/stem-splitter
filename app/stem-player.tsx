@@ -8,11 +8,12 @@ import {
   Share,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { useStemPlayer } from "@/hooks/use-stem-player";
+import { Waveform } from "@/components/waveform";
 import * as Haptics from "expo-haptics";
 
 const STEM_TYPES = [
@@ -46,6 +47,10 @@ export default function StemPlayerScreen() {
   const colors = useColors();
   const { trackId } = useLocalSearchParams();
   const [selectedStem, setSelectedStem] = useState<StemId>("master");
+  const [playerWidth, setPlayerWidth] = useState(300);
+  const [stemVolumes, setStemVolumes] = useState<Record<string, number>>(
+    Object.fromEntries(STEM_TYPES.map((s) => [s.id, 100]))
+  );
 
   // ── Data ───────────────────────────────────────────────────────────────
   const { data: track } = trpc.tracks.get.useQuery(
@@ -58,7 +63,6 @@ export default function StemPlayerScreen() {
     { enabled: !!trackId }
   );
 
-  // Build a fully-qualified URL the player can stream
   const stemUrl = stemData?.fileUrl
     ? stemData.fileUrl.startsWith("http")
       ? stemData.fileUrl
@@ -75,22 +79,17 @@ export default function StemPlayerScreen() {
     handleSeek,
   } = useStemPlayer(stemUrl);
 
-  // ── Volume per stem ────────────────────────────────────────────────────
-  const [stemVolumes, setStemVolumes] = useState<Record<string, number>>(
-    Object.fromEntries(STEM_TYPES.map((s) => [s.id, 100]))
-  );
+  const progressFraction = duration > 0 ? currentTime / duration : 0;
 
-  const handleVolumeAdjust = useCallback(
-    (stemId: string, delta: number) => {
-      setStemVolumes((prev) => ({
-        ...prev,
-        [stemId]: Math.max(0, Math.min(100, (prev[stemId] ?? 100) + delta)),
-      }));
-    },
-    []
-  );
+  // ── Volume ─────────────────────────────────────────────────────────────
+  const handleVolumeAdjust = useCallback((stemId: string, delta: number) => {
+    setStemVolumes((prev) => ({
+      ...prev,
+      [stemId]: Math.max(0, Math.min(100, (prev[stemId] ?? 100) + delta)),
+    }));
+  }, []);
 
-  // ── Export / Share ─────────────────────────────────────────────────────
+  // ── Export ─────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
 
   const handleDownload = async () => {
@@ -102,11 +101,7 @@ export default function StemPlayerScreen() {
         format: "mp3",
       });
       if (result?.downloadUrl) {
-        Alert.alert(
-          "Download ready",
-          `${selectedStem} stem download URL:\n${result.downloadUrl}`,
-          [{ text: "OK" }]
-        );
+        Alert.alert("Download ready", `${selectedStem} stem:\n${result.downloadUrl}`);
       }
     } catch {
       Alert.alert("Download failed", "Could not generate a download link.");
@@ -133,12 +128,8 @@ export default function StemPlayerScreen() {
     }
   };
 
-  // ── Stem tab renderer ──────────────────────────────────────────────────
-  const renderStemTab = ({
-    item,
-  }: {
-    item: (typeof STEM_TYPES)[number];
-  }) => {
+  // ── Stem tab ───────────────────────────────────────────────────────────
+  const renderStemTab = ({ item }: { item: (typeof STEM_TYPES)[number] }) => {
     const active = selectedStem === item.id;
     return (
       <TouchableOpacity
@@ -177,8 +168,7 @@ export default function StemPlayerScreen() {
     );
   };
 
-  // ── Progress bar ───────────────────────────────────────────────────────
-  const progressFraction = duration > 0 ? currentTime / duration : 0;
+  const activeStem = STEM_TYPES.find((s) => s.id === selectedStem)!;
 
   return (
     <ScreenContainer className="p-4">
@@ -186,7 +176,8 @@ export default function StemPlayerScreen() {
         contentContainerStyle={{ flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="gap-6">
+        <View style={{ gap: 24 }}>
+
           {/* Back */}
           <TouchableOpacity
             onPress={() => router.back()}
@@ -196,63 +187,50 @@ export default function StemPlayerScreen() {
             <Text style={{ color: colors.primary, fontSize: 15 }}>← Back</Text>
           </TouchableOpacity>
 
-          {/* Album art placeholder */}
+          {/* Album art */}
           <View
-            className="w-full aspect-square rounded-2xl items-center justify-center"
-            style={{ backgroundColor: colors.surface }}
+            style={{
+              width: "100%",
+              aspectRatio: 1,
+              borderRadius: 16,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: colors.surface,
+            }}
           >
             <Text style={{ fontSize: 72 }}>🎵</Text>
           </View>
 
           {/* Track info */}
-          <View className="gap-1">
+          <View style={{ gap: 4 }}>
             <Text
-              className="text-2xl font-bold"
-              style={{ color: colors.foreground }}
+              style={{ fontSize: 22, fontWeight: "700", color: colors.foreground }}
               numberOfLines={1}
             >
               {track?.title || track?.fileName || "Loading…"}
             </Text>
-            <Text style={{ color: colors.muted }} numberOfLines={1}>
+            <Text style={{ fontSize: 14, color: colors.muted }} numberOfLines={1}>
               {track?.artist || "Unknown Artist"}
             </Text>
           </View>
 
-          {/* Playback progress */}
-          <View className="gap-2">
-            {/* Tappable progress bar */}
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={(e) => {
-                if (!duration) return;
-                // approximate: tap position ratio → seek time
-                const { locationX, nativeEvent } = e as any;
-                // nativeEvent.layout isn't available here; use a fixed width heuristic
-                // A proper implementation would use onLayout on the track view
-                const ratio = Math.min(1, Math.max(0, locationX / 300));
-                handleSeek(ratio * duration);
-              }}
-            >
-              <View
-                style={{
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: colors.border,
-                  overflow: "hidden",
-                }}
-              >
-                <View
-                  style={{
-                    height: "100%",
-                    width: `${progressFraction * 100}%`,
-                    backgroundColor: colors.primary,
-                    borderRadius: 2,
-                  }}
-                />
-              </View>
-            </TouchableOpacity>
+          {/* Waveform */}
+          <View
+            onLayout={(e) => setPlayerWidth(e.nativeEvent.layout.width)}
+            style={{ gap: 8 }}
+          >
+            <Waveform
+              progress={progressFraction}
+              duration={duration}
+              trackId={parseInt(trackId as string)}
+              activeColor={activeStem.color}
+              inactiveColor={colors.border}
+              onSeek={(p) => handleSeek(p * duration)}
+              width={playerWidth}
+            />
 
-            <View className="flex-row justify-between">
+            {/* Time labels */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={{ fontSize: 11, color: colors.muted }}>
                 {formatTime(currentTime)}
               </Text>
@@ -263,7 +241,7 @@ export default function StemPlayerScreen() {
           </View>
 
           {/* Transport controls */}
-          <View className="flex-row items-center justify-center gap-8">
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 32 }}>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => handleSeek(Math.max(0, currentTime - 10))}
@@ -281,8 +259,7 @@ export default function StemPlayerScreen() {
                   width: 64,
                   height: 64,
                   borderRadius: 32,
-                  backgroundColor:
-                    !isLoaded && stemUrl ? colors.border : colors.primary,
+                  backgroundColor: !isLoaded && stemUrl ? colors.border : activeStem.color,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -295,19 +272,15 @@ export default function StemPlayerScreen() {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() =>
-                handleSeek(Math.min(duration, currentTime + 10))
-              }
+              onPress={() => handleSeek(Math.min(duration, currentTime + 10))}
             >
               <Text style={{ fontSize: 30 }}>⏭</Text>
             </TouchableOpacity>
           </View>
 
           {/* Stem selector */}
-          <View className="gap-3">
-            <Text
-              style={{ fontSize: 15, fontWeight: "600", color: colors.foreground }}
-            >
+          <View style={{ gap: 10 }}>
+            <Text style={{ fontSize: 15, fontWeight: "600", color: colors.foreground }}>
               Stems
             </Text>
             <FlatList
@@ -319,98 +292,73 @@ export default function StemPlayerScreen() {
             />
           </View>
 
-          {/* Volume control for selected stem */}
+          {/* Volume control */}
           <View
             style={{
               backgroundColor: colors.surface,
               borderRadius: 12,
               padding: 16,
               gap: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
             }}
           >
-            {(() => {
-              const stem = STEM_TYPES.find((s) => s.id === selectedStem)!;
-              const vol = stemVolumes[selectedStem] ?? 100;
-              return (
-                <>
-                  <View className="flex-row items-center justify-between">
-                    <Text
-                      style={{
-                        fontWeight: "600",
-                        fontSize: 15,
-                        color: colors.foreground,
-                      }}
-                    >
-                      {stem.label} Volume
-                    </Text>
-                    <Text
-                      style={{ fontWeight: "700", color: stem.color }}
-                    >
-                      {vol}%
-                    </Text>
-                  </View>
+            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={{ fontWeight: "600", fontSize: 15, color: colors.foreground }}>
+                {activeStem.label} Volume
+              </Text>
+              <Text style={{ fontWeight: "700", color: activeStem.color }}>
+                {stemVolumes[selectedStem]}%
+              </Text>
+            </View>
 
-                  {/* Volume track */}
+            <View
+              style={{
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: colors.border,
+                overflow: "hidden",
+              }}
+            >
+              <View
+                style={{
+                  height: "100%",
+                  width: `${stemVolumes[selectedStem]}%`,
+                  backgroundColor: activeStem.color,
+                  borderRadius: 4,
+                }}
+              />
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {[-25, -10, 10, 25].map((delta) => (
+                <TouchableOpacity
+                  key={delta}
+                  onPress={() => handleVolumeAdjust(selectedStem, delta)}
+                  activeOpacity={0.7}
+                  style={{ flex: 1 }}
+                >
                   <View
                     style={{
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: colors.border,
-                      overflow: "hidden",
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      alignItems: "center",
                     }}
                   >
-                    <View
-                      style={{
-                        height: "100%",
-                        width: `${vol}%`,
-                        backgroundColor: stem.color,
-                        borderRadius: 4,
-                      }}
-                    />
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: colors.foreground }}>
+                      {delta > 0 ? `+${delta}` : delta}
+                    </Text>
                   </View>
-
-                  <View className="flex-row gap-2">
-                    {[-25, -10, 10, 25].map((delta) => (
-                      <TouchableOpacity
-                        key={delta}
-                        onPress={() => handleVolumeAdjust(selectedStem, delta)}
-                        activeOpacity={0.7}
-                        style={{ flex: 1 }}
-                      >
-                        <View
-                          style={{
-                            paddingVertical: 8,
-                            borderRadius: 8,
-                            borderWidth: 1,
-                            borderColor: colors.border,
-                            alignItems: "center",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              fontWeight: "600",
-                              color: colors.foreground,
-                            }}
-                          >
-                            {delta > 0 ? `+${delta}` : delta}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              );
-            })()}
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
           {/* Action buttons */}
-          <View className="flex-row gap-3">
-            <TouchableOpacity
-              onPress={handleDownload}
-              activeOpacity={0.7}
-              style={{ flex: 1 }}
-            >
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity onPress={handleDownload} activeOpacity={0.7} style={{ flex: 1 }}>
               <View
                 style={{
                   paddingVertical: 12,
@@ -420,19 +368,13 @@ export default function StemPlayerScreen() {
                   alignItems: "center",
                 }}
               >
-                <Text
-                  style={{ fontSize: 15, fontWeight: "600", color: colors.foreground }}
-                >
+                <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground }}>
                   📥 Download
                 </Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handleShare}
-              activeOpacity={0.7}
-              style={{ flex: 1 }}
-            >
+            <TouchableOpacity onPress={handleShare} activeOpacity={0.7} style={{ flex: 1 }}>
               <View
                 style={{
                   paddingVertical: 12,
@@ -442,21 +384,14 @@ export default function StemPlayerScreen() {
                   alignItems: "center",
                 }}
               >
-                <Text
-                  style={{ fontSize: 15, fontWeight: "600", color: colors.foreground }}
-                >
+                <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground }}>
                   🔗 Share
                 </Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: "/stem-mixer",
-                  params: { trackId: trackId as string },
-                })
-              }
+              onPress={() => router.push({ pathname: "/stem-mixer", params: { trackId: trackId as string } })}
               activeOpacity={0.7}
               style={{ flex: 1 }}
             >
@@ -464,16 +399,17 @@ export default function StemPlayerScreen() {
                 style={{
                   paddingVertical: 12,
                   borderRadius: 10,
-                  backgroundColor: colors.primary,
+                  backgroundColor: activeStem.color,
                   alignItems: "center",
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff" }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: "#fff" }}>
                   🎚 Mix
                 </Text>
               </View>
             </TouchableOpacity>
           </View>
+
         </View>
       </ScrollView>
     </ScreenContainer>
