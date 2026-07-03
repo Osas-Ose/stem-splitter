@@ -237,9 +237,11 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="p-4">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={{ gap: 24 }}>
-          {/* Header */}
           <View style={{ gap: 4 }}>
             <Text style={{ fontSize: 30, fontWeight: "700", color: colors.foreground }}>
               StemSplitter
@@ -249,7 +251,6 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Upload button */}
           <TouchableOpacity
             onPress={handleUploadAudio}
             disabled={uploading}
@@ -287,7 +288,6 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Recent tracks */}
           <View style={{ gap: 12 }}>
             <Text style={{ fontSize: 18, fontWeight: "600", color: colors.foreground }}>
               Recent Tracks
