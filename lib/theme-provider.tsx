@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Appearance, View, useColorScheme as useSystemColorScheme } from "react-native";
 import { colorScheme as nativewindColorScheme, vars } from "nativewind";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SchemeColors, type ColorScheme } from "@/constants/theme";
 
@@ -10,6 +11,12 @@ type ThemeContextValue = {
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+export function useThemeContext() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("useThemeContext must be used within ThemeProvider");
+  return ctx;
+}
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useSystemColorScheme() ?? "light";
@@ -29,10 +36,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setColorScheme = useCallback((scheme: ColorScheme) => {
-    setColorSchemeState(scheme);
-    applyScheme(scheme);
-  }, [applyScheme]);
+  const setColorScheme = useCallback(
+    (scheme: ColorScheme) => {
+      setColorSchemeState(scheme);
+      applyScheme(scheme);
+      AsyncStorage.setItem("theme_preference", scheme);
+    },
+    [applyScheme]
+  );
+
+  // Load saved theme on startup
+  useEffect(() => {
+    AsyncStorage.getItem("theme_preference").then((saved) => {
+      if (saved === "light" || saved === "dark") {
+        setColorScheme(saved);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     applyScheme(colorScheme);
@@ -51,29 +71,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         "color-warning": SchemeColors[colorScheme].warning,
         "color-error": SchemeColors[colorScheme].error,
       }),
-    [colorScheme],
+    [colorScheme]
   );
 
   const value = useMemo(
-    () => ({
-      colorScheme,
-      setColorScheme,
-    }),
-    [colorScheme, setColorScheme],
+    () => ({ colorScheme, setColorScheme }),
+    [colorScheme, setColorScheme]
   );
-  console.log(value, themeVariables)
 
   return (
     <ThemeContext.Provider value={value}>
       <View style={[{ flex: 1 }, themeVariables]}>{children}</View>
     </ThemeContext.Provider>
   );
-}
-
-export function useThemeContext(): ThemeContextValue {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) {
-    throw new Error("useThemeContext must be used within ThemeProvider");
-  }
-  return ctx;
 }

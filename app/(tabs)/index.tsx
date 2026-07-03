@@ -11,6 +11,7 @@ import { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useThemeContext } from "@/lib/theme-provider";
 import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -67,6 +68,8 @@ const parseFileName = (fileName: string) => {
 
 export default function HomeScreen() {
   const colors = useColors();
+  const { colorScheme, setColorScheme } = useThemeContext();
+  const toggleTheme = () => setColorScheme(colorScheme === "dark" ? "light" : "dark");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const { data: tracks, isLoading, refetch } = trpc.tracks.list.useQuery();
@@ -246,15 +249,38 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ gap: 24 }}>
-          <View style={{ gap: 4 }}>
-            <Text style={{ fontSize: 30, fontWeight: "700", color: colors.foreground }}>
-              StemSplitter
-            </Text>
-            <Text style={{ fontSize: 15, color: colors.muted }}>
-              Extract stems from any track
-            </Text>
+
+          {/* Header with theme toggle */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ gap: 4 }}>
+              <Text style={{ fontSize: 30, fontWeight: "700", color: colors.foreground }}>
+                StemSplitter
+              </Text>
+              <Text style={{ fontSize: 15, color: colors.muted }}>
+                Extract stems from any track
+              </Text>
+            </View>
+            <TouchableOpacity onPress={toggleTheme} activeOpacity={0.7}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 22 }}>
+                  {colorScheme === "dark" ? "☀️" : "🌙"}
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
+          {/* Upload button */}
           <TouchableOpacity
             onPress={handleUploadAudio}
             disabled={uploading}
@@ -292,6 +318,7 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
+          {/* Recent tracks */}
           <View style={{ gap: 12 }}>
             <Text style={{ fontSize: 18, fontWeight: "600", color: colors.foreground }}>
               Recent Tracks
