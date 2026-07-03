@@ -7,7 +7,8 @@ import {
   FlatList,
   Alert,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
@@ -70,6 +71,15 @@ export default function HomeScreen() {
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const { data: tracks, isLoading, refetch } = trpc.tracks.list.useQuery();
 
+  // ── Onboarding check ───────────────────────────────────────────────────
+  useEffect(() => {
+    AsyncStorage.getItem("onboarding_complete").then((value) => {
+      if (!value) {
+        router.replace("/onboarding");
+      }
+    });
+  }, []);
+
   const getUploadUrlMutation = trpc.tracks.getUploadUrl.useMutation();
   const createTrackMutation = trpc.tracks.create.useMutation({
     onSuccess: () => refetch(),
@@ -80,7 +90,6 @@ export default function HomeScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      // ── 1. Pick a file ──────────────────────────────────────────────
       const result = await DocumentPicker.getDocumentAsync({
         type: SUPPORTED_MIME,
         copyToCacheDirectory: true,
@@ -105,13 +114,11 @@ export default function HomeScreen() {
       setUploading(true);
       setUploadProgress("Getting upload URL…");
 
-      // ── 2. Get a presigned PUT URL from the server ───────────────────
       const { uploadUrl, key } = await getUploadUrlMutation.mutateAsync({
         fileName,
         mimeType,
       });
 
-      // ── 3. Upload the file directly to storage ───────────────────────
       setUploadProgress("Uploading file…");
       const fileResponse = await fetch(asset.uri);
       const fileBlob = await fileResponse.blob();
@@ -126,7 +133,6 @@ export default function HomeScreen() {
         throw new Error(`Upload failed (${uploadResp.status})`);
       }
 
-      // ── 4. Create the track record in the DB ─────────────────────────
       setUploadProgress("Saving track…");
       const fileUrl = `/manus-storage/${key}`;
 
@@ -139,13 +145,11 @@ export default function HomeScreen() {
         artist: artist ?? undefined,
       });
 
-      // ── 5. Kick off stem separation ──────────────────────────────────
       setUploadProgress("Starting separation…");
       await startSeparationMutation.mutateAsync({ trackId: trackId || 0 });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // ── 6. Navigate to the processing screen ─────────────────────────
       router.push({
         pathname: "/processing",
         params: { trackId: (trackId || 0).toString() },
