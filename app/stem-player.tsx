@@ -89,24 +89,8 @@ export default function StemPlayerScreen() {
     }));
   }, []);
 
-  // ── Export ─────────────────────────────────────────────────────────────
+  // ── Share ──────────────────────────────────────────────────────────────
   const utils = trpc.useUtils();
-
-  const handleDownload = async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const result = await utils.export.downloadStem.fetch({
-        trackId: parseInt(trackId as string),
-        stemType: selectedStem,
-        format: "mp3",
-      });
-      if (result?.downloadUrl) {
-        Alert.alert("Download ready", `${selectedStem} stem:\n${result.downloadUrl}`);
-      }
-    } catch {
-      Alert.alert("Download failed", "Could not generate a download link.");
-    }
-  };
 
   const handleShare = async () => {
     try {
@@ -228,8 +212,6 @@ export default function StemPlayerScreen() {
               onSeek={(p) => handleSeek(p * duration)}
               width={playerWidth}
             />
-
-            {/* Time labels */}
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <Text style={{ fontSize: 11, color: colors.muted }}>
                 {formatTime(currentTime)}
@@ -358,7 +340,11 @@ export default function StemPlayerScreen() {
 
           {/* Action buttons */}
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity onPress={handleDownload} activeOpacity={0.7} style={{ flex: 1 }}>
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: "/export", params: { trackId: trackId as string } })}
+              activeOpacity={0.7}
+              style={{ flex: 1 }}
+            >
               <View
                 style={{
                   paddingVertical: 12,
@@ -369,12 +355,16 @@ export default function StemPlayerScreen() {
                 }}
               >
                 <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground }}>
-                  📥 Download
+                  📥 Export
                 </Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleShare} activeOpacity={0.7} style={{ flex: 1 }}>
+            <TouchableOpacity
+              onPress={handleShare}
+              activeOpacity={0.7}
+              style={{ flex: 1 }}
+            >
               <View
                 style={{
                   paddingVertical: 12,
