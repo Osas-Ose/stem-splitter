@@ -30,10 +30,19 @@ export const appRouter = router({
   // Audio track management
   tracks: router({
     // Request a presigned URL to upload an audio file directly to storage
-    getUploadUrl: protectedProcedure
+getUploadUrl: protectedProcedure
       .input(z.object({ fileName: z.string().min(1).max(255), mimeType: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const key = `tracks/${ctx.user.id}/${Date.now()}-${input.fileName}`;
+
+        // In development without storage configured, return a fake upload URL
+        if (process.env.NODE_ENV === "development" && !process.env.BUILT_IN_FORGE_API_URL) {
+          return {
+            uploadUrl: `http://localhost:3000/api/dev-upload/${key}`,
+            key,
+          };
+        }
+
         return getPresignedUploadUrl(key, input.mimeType);
       }),
 

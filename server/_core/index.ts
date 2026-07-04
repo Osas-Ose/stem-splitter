@@ -58,6 +58,12 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
 
+  // Dev-only upload endpoint — accepts file uploads without real storage
+  if (process.env.NODE_ENV === "development") {
+    app.put("/api/dev-upload/*", (req, res) => {
+      res.status(200).json({ ok: true });
+    });
+  }
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
   });
