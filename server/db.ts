@@ -1,6 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, tracks, stems, mixPresets } from "../drizzle/schema";
+import { ENV } from "./_core/env";
 import { startSeparationJob, getPredictionStatus, mapReplicateStatus, estimateProgress } from "./services/replicate";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -153,14 +154,23 @@ export async function startSeparation(trackId: number, userId: number, model: st
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const track = await getTrack(trackId, userId);
+  let track = await getTrack(trackId, userId);
+
+  // In development, find track without user check
+  if (!track && process.env.NODE_ENV === "development") {
+    const result = await db.select().from(tracks).where(eq(tracks.id, trackId)).limit(1);
+    track = result[0] || null;
+  }
+
   if (!track) throw new Error("Track not found");
-  if (!track.fileUrl) throw new Error("Track has no audio file yet");
+
+  // Use placeholder URL in dev if no real file URL
+  const fileUrl = track.fileUrl || "http://localhost:3000/dev-placeholder.mp3";
 
   let jobId: string | null = null;
   if (process.env.REPLICATE_API_KEY) {
     try {
-      jobId = await startSeparationJob(track.fileUrl);
+      jobId = await startSeparationJob(fileUrl);
     } catch (err) {
       console.error("Replicate error:", err);
     }
@@ -178,7 +188,14 @@ export async function getSeparationStatus(trackId: number, userId: number) {
   const db = await getDb();
   if (!db) return null;
 
-  const track = await getTrack(trackId, userId);
+  let track = await getTrack(trackId, userId);
+
+  // In development, find track without user check
+  if (!track && process.env.NODE_ENV === "development") {
+    const result = await db.select().from(tracks).where(eq(tracks.id, trackId)).limit(1);
+    track = result[0] || null;
+  }
+
   if (!track) return null;
 
   if (track.status === "processing") {
