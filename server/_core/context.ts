@@ -1,6 +1,9 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import { getDb } from "../db";
+import { users } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -8,18 +11,47 @@ export type TrpcContext = {
   user: User | null;
 };
 
-// Dev bypass user — only used when NODE_ENV=development and auth fails
-const DEV_USER: User = {
-  id: 1,
-  openId: "dev-user",
-  name: "Dev User",
-  email: "dev@stemsplitter.app",
-  role: "user",
-  loginMethod: "dev",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  lastSignedIn: new Date(),
-};
+// Ensure dev user exists in the database
+async function getOrCreateDevUser(): Promise<User> {
+  const db = await getDb();
+  if (!db) {
+    return {
+      id: 1,
+      openId: "dev-user",
+      name: "Dev User",
+      email: "dev@stemsplitter.app",
+      role: "user" as any,
+      loginMethod: "dev",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    };
+  }
+
+  const existing = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, "dev-user"))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0] as User;
+
+  await db.insert(users).values({
+    openId: "dev-user",
+    name: "Dev User",
+    email: "dev@stemsplitter.app",
+    role: "user" as any,
+    loginMethod: "dev",
+  });
+
+  const created = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, "dev-user"))
+    .limit(1);
+
+  return created[0] as User;
+}
 
 export async function createContext(
   opts: CreateExpressContextOptions
@@ -29,9 +61,8 @@ export async function createContext(
   try {
     user = await sdk.authenticateRequest(opts.req);
   } catch (error) {
-    // In development, use a bypass user so you can test without OAuth
     if (process.env.NODE_ENV === "development") {
-      user = DEV_USER;
+      user = await getOrCreateDevUser();
     } else {
       user = null;
     }
