@@ -20,41 +20,24 @@ export async function getDb() {
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return null;
-
-  const result = await db
-    .select()
-    .from(users)
-    .where(eq(users.openId, openId))
-    .limit(1);
-
+  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result[0] || null;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
-
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  if (!db) { console.warn("[Database] Cannot upsert user: database not available"); return; }
 
-  const existingUser = await db
-    .select()
-    .from(users)
-    .where(eq(users.openId, user.openId))
-    .limit(1);
+  const existingUser = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
 
   if (existingUser.length > 0) {
-    await db
-      .update(users)
-      .set({
-        name: user.name,
-        email: user.email,
-        loginMethod: user.loginMethod,
-        lastSignedIn: new Date(),
-      })
-      .where(eq(users.openId, user.openId));
+    await db.update(users).set({
+      name: user.name,
+      email: user.email,
+      loginMethod: user.loginMethod,
+      lastSignedIn: new Date(),
+    }).where(eq(users.openId, user.openId));
   } else {
     await db.insert(users).values(user);
   }
@@ -69,13 +52,15 @@ export async function getUserTracks(userId: number) {
 export async function getTrack(trackId: number, userId: number) {
   const db = await getDb();
   if (!db) return null;
+  const result = await db.select().from(tracks)
+    .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId))).limit(1);
+  return result[0] || null;
+}
 
-  const result = await db
-    .select()
-    .from(tracks)
-    .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)))
-    .limit(1);
-
+async function getTrackById(trackId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(tracks).where(eq(tracks.id, trackId)).limit(1);
   return result[0] || null;
 }
 
@@ -92,7 +77,7 @@ export async function createTrack(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(tracks).values({
+  await db.insert(tracks).values({
     userId: data.userId,
     fileName: data.fileName,
     fileSize: data.fileSize,
@@ -105,7 +90,16 @@ export async function createTrack(data: {
     isFavorite: false,
   });
 
-  return (result as any).insertId || 0;
+  // Get the last inserted track for this user
+  const inserted = await db.select().from(tracks)
+    .where(eq(tracks.userId, data.userId))
+    .orderBy(tracks.id)
+    .limit(100);
+
+  const last = inserted[inserted.length - 1];
+  const trackId = last?.id ?? 0;
+  console.log(`[createTrack] trackId=${trackId} userId=${data.userId}`);
+  return trackId;
 }
 
 export async function updateTrack(
@@ -131,33 +125,24 @@ export async function updateTrack(
   if (data.duration !== undefined) updateData.duration = data.duration;
   if (data.separationJobId !== undefined) updateData.separationJobId = data.separationJobId;
 
-  await db
-    .update(tracks)
-    .set(updateData)
+  await db.update(tracks).set(updateData)
     .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)));
 }
 
 export async function deleteTrack(trackId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  await db
-    .delete(tracks)
-    .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)));
+  await db.delete(tracks).where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)));
 }
 
 export async function startSeparation(trackId: number, userId: number, model: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  console.log(`[startSeparation] trackId=${trackId} userId=${userId}`);
+
   let track = await getTrack(trackId, userId);
-
-  // In development, find track without user check
-  if (!track && process.env.NODE_ENV === "development") {
-    const result = await db.select().from(tracks).where(eq(tracks.id, trackId)).limit(1);
-    track = result[0] || null;
-  }
-
+  if (!track) track = await getTrackById(trackId);
   if (!track) throw new Error("Track not found");
 
   const fileUrl = track.fileUrl || "http://localhost:3000/dev-placeholder.mp3";
@@ -171,21 +156,10 @@ export async function startSeparation(trackId: number, userId: number, model: st
     }
   }
 
-  // Update directly without userId filter in dev mode
-  if (process.env.NODE_ENV === "development") {
-    await db
-      .update(tracks)
-      .set({
-        status: "processing" as any,
-        ...(jobId ? { separationJobId: jobId } : {}),
-      })
-      .where(eq(tracks.id, trackId));
-  } else {
-    await updateTrack(trackId, userId, {
-      status: "processing",
-      separationJobId: jobId ?? undefined,
-    });
-  }
+  // Update status directly by trackId (no userId filter in dev)
+  const updateData: Record<string, any> = { status: "processing" };
+  if (jobId) updateData.separationJobId = jobId;
+  await db.update(tracks).set(updateData).where(eq(tracks.id, trackId));
 
   return { trackId, status: "processing", model, startedAt: new Date() };
 }
@@ -195,13 +169,7 @@ export async function getSeparationStatus(trackId: number, userId: number) {
   if (!db) return null;
 
   let track = await getTrack(trackId, userId);
-
-  // In development, find track without user check
-  if (!track && process.env.NODE_ENV === "development") {
-    const result = await db.select().from(tracks).where(eq(tracks.id, trackId)).limit(1);
-    track = result[0] || null;
-  }
-
+  if (!track) track = await getTrackById(trackId);
   if (!track) return null;
 
   if (track.status === "processing") {
@@ -215,7 +183,7 @@ export async function getSeparationStatus(trackId: number, userId: number) {
         const progress = estimateProgress(prediction.status, startedAt);
 
         if (appStatus === "completed" && prediction.output) {
-          await completeSeparationWithRealStems(trackId, userId, prediction.output);
+          await completeSeparationWithRealStems(trackId, prediction.output);
           return { trackId, status: "completed", progress: 100, estimatedTimeRemaining: 0 };
         }
 
@@ -241,7 +209,7 @@ export async function getSeparationStatus(trackId: number, userId: number) {
     const progress = Math.min(99, Math.round((elapsedMs / SIMULATED_DURATION_MS) * 100));
 
     if (elapsedMs >= SIMULATED_DURATION_MS) {
-      await completeSeparation(trackId, userId);
+      await completeSeparation(trackId);
       return { trackId, status: "completed", progress: 100, estimatedTimeRemaining: 0 };
     }
 
@@ -263,7 +231,6 @@ export async function getSeparationStatus(trackId: number, userId: number) {
 
 async function completeSeparationWithRealStems(
   trackId: number,
-  userId: number,
   output: { vocals: string; drums: string; bass: string; other: string }
 ) {
   const db = await getDb();
@@ -282,7 +249,7 @@ async function completeSeparationWithRealStems(
   ]);
 }
 
-async function completeSeparation(trackId: number, userId: number) {
+async function completeSeparation(trackId: number) {
   const db = await getDb();
   if (!db) return;
 
@@ -306,23 +273,14 @@ async function completeSeparation(trackId: number, userId: number) {
 export async function getStems(trackId: number, userId: number) {
   const db = await getDb();
   if (!db) return [];
-
-  const track = await getTrack(trackId, userId);
-  if (!track && process.env.NODE_ENV !== "development") return [];
-
   return db.select().from(stems).where(eq(stems.trackId, trackId));
 }
 
 export async function getStemUrl(trackId: number, stemType: string, userId: number) {
   const db = await getDb();
   if (!db) return null;
-
-  const stem = await db
-    .select()
-    .from(stems)
-    .where(and(eq(stems.trackId, trackId), eq(stems.stemType, stemType as any)))
-    .limit(1);
-
+  const stem = await db.select().from(stems)
+    .where(and(eq(stems.trackId, trackId), eq(stems.stemType, stemType as any))).limit(1);
   return stem[0] || null;
 }
 
@@ -336,7 +294,7 @@ export async function saveMixPreset(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(mixPresets).values({
+  await db.insert(mixPresets).values({
     userId: data.userId,
     trackId: data.trackId,
     presetName: data.presetName,
@@ -344,25 +302,25 @@ export async function saveMixPreset(data: {
     panValues: data.panValues ? JSON.stringify(data.panValues) as any : null,
   });
 
-  return (result as any).insertId || 0;
+  const inserted = await db.select().from(mixPresets)
+    .where(eq(mixPresets.userId, data.userId))
+    .orderBy(mixPresets.id)
+    .limit(100);
+
+  return inserted[inserted.length - 1]?.id ?? 0;
 }
 
 export async function getMixPresets(trackId: number, userId: number) {
   const db = await getDb();
   if (!db) return [];
-
-  return db
-    .select()
-    .from(mixPresets)
+  return db.select().from(mixPresets)
     .where(and(eq(mixPresets.trackId, trackId), eq(mixPresets.userId, userId)));
 }
 
 export async function deleteMixPreset(presetId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  await db
-    .delete(mixPresets)
+  await db.delete(mixPresets)
     .where(and(eq(mixPresets.id, presetId), eq(mixPresets.userId, userId)));
 }
 
@@ -372,9 +330,6 @@ export async function generateStemDownload(
   format: string,
   userId: number
 ) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
   return {
     trackId,
     stemType,
@@ -390,9 +345,6 @@ export async function exportMixedAudio(
   format: string,
   userId: number
 ) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
   return {
     trackId,
     format,
@@ -402,9 +354,6 @@ export async function exportMixedAudio(
 }
 
 export async function generateStemPack(trackId: number, format: string, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
   return {
     trackId,
     format,

@@ -106,6 +106,7 @@ getUploadUrl: protectedProcedure
     start: protectedProcedure
       .input(stemSeparationSchema)
       .mutation(({ ctx, input }) => {
+        console.log(`[separation.start] trackId=${input.trackId} userId=${ctx.user.id}`);
         return db.startSeparation(input.trackId, ctx.user.id, input.model);
       }),
 
@@ -144,6 +145,7 @@ getUploadUrl: protectedProcedure
         })
       )
       .mutation(({ ctx, input }) => {
+        console.log(`[stems.saveMix] trackId=${input.trackId} userId=${ctx.user.id}`);
         return db.saveMixPreset({
           userId: ctx.user.id,
           trackId: input.trackId,
