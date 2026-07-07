@@ -1,13 +1,5 @@
-/**
- * Replicate Demucs integration for real stem separation.
- * Demucs splits audio into 4 stems: vocals, drums, bass, other.
- *
- * Get a free API key at https://replicate.com
- * Add it to your .env file as REPLICATE_API_KEY=r8_...
- */
-
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-const DEMUCS_MODEL = "cjwbw/demucs";
+const DEMUCS_VERSION = "25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953";
 
 export interface ReplicateOutput {
   bass: string;
@@ -37,15 +29,17 @@ export async function startSeparationJob(audioUrl: string): Promise<string> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: DEMUCS_MODEL,
+      version: DEMUCS_VERSION,
       input: {
         audio: audioUrl,
-        model: "htdemucs",
+        model_name: "htdemucs",
+        shifts: 1,
+        overlap: 0.25,
         stem: null,
-        int24: false,
+        clip_mode: "rescale",
+        mp3_bitrate: 320,
         float32: false,
         output_format: "mp3",
-        jobs: 0,
       },
     }),
   });
@@ -59,18 +53,13 @@ export async function startSeparationJob(audioUrl: string): Promise<string> {
   return prediction.id;
 }
 
-export async function getPredictionStatus(
-  predictionId: string
-): Promise<ReplicatePrediction> {
-  const response = await fetch(
-    `${REPLICATE_API_URL}/${predictionId}`,
-    {
-      headers: {
-        Authorization: `Token ${getApiKey()}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
+export async function getPredictionStatus(predictionId: string): Promise<ReplicatePrediction> {
+  const response = await fetch(`${REPLICATE_API_URL}/${predictionId}`, {
+    headers: {
+      Authorization: `Token ${getApiKey()}`,
+      "Content-Type": "application/json",
+    },
+  });
 
   if (!response.ok) {
     const error = await response.text();
